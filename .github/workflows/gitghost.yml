@@ -1,0 +1,54 @@
+name: "GitGhost Security & Quality Gate"
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master", "develop" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  gitghost-scan:
+    name: "GitGhost Autonomous DevSecOps Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout Codebase"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: "Install Dependencies & GitGhost"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: "Run GitGhost Security Scan"
+        id: scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gitghost scan --fail-on high --format sarif --output gitghost-results.sarif || echo "SCAN_FAILED=true" >> $GITHUB_ENV
+
+      - name: "Upload SARIF to GitHub Code Scanning"
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gitghost-results.sarif
+        continue-on-error: true
+
+      - name: "Run GitGhost CI PR Integrator"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gitghost ci --fail-on high

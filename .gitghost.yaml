@@ -1,0 +1,59 @@
+# GitGhost Security Configuration (.gitghost.yaml)
+version: "1.0"
+
+# Target severity filtering: info, low, medium, high, critical
+min_severity: "low"
+fail_on: "high"
+
+# Paths to exclude from analysis
+exclude_patterns:
+  - "tests/**"
+  - "*.min.js"
+  - "*.min.css"
+  - "node_modules/**"
+  - "vendor/**"
+  - ".venv/**"
+  - "dist/**"
+  - "build/**"
+
+# Secret detection settings
+secrets:
+  enabled: true
+  min_entropy: 4.3
+  check_git_diff_only: true
+  ignored_patterns:
+    - "^EXAMPLE_.*"
+    - ".*dummy.*"
+    - ".*test_token.*"
+
+# Static AST analysis settings
+ast:
+  enabled: true
+  languages:
+    - "python"
+    - "javascript"
+    - "typescript"
+  rules:
+    sqli: true
+    rce: true
+    path_traversal: true
+    insecure_deserialization: true
+    weak_cryptography: true
+    quadratic_string_concat: true
+    unclosed_resources: true
+
+# Autonomous LLM Review & Patch Engine
+engine:
+  # Provider: auto, openai, anthropic, gemini, ollama, offline
+  provider: "auto"
+  model: "default"
+  temperature: 0.1
+  generate_patches: true
+  auto_apply_patches: false
+
+# GitHub Action / PR Integrator
+github:
+  inline_comments: true
+  block_on_failure: true
+  post_summary: true
+  generate_sarif: true
