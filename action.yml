@@ -1,0 +1,54 @@
+name: "GitGhost DevSecOps Security Scanner"
+description: "Autonomous Git Diff, AST & Secret Scanner with Autonomous LLM Patch Engine"
+author: "EvoderDev"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  github_token:
+    description: "GitHub Token for posting PR comments and reviews"
+    required: false
+    default: ${{ github.token }}
+  fail_on:
+    description: "Severity threshold to fail the workflow (critical, high, medium, low)"
+    required: false
+    default: "high"
+  min_severity:
+    description: "Minimum severity to report"
+    required: false
+    default: "low"
+  format:
+    description: "Output format (rich, json, sarif, markdown)"
+    required: false
+    default: "sarif"
+
+outputs:
+  findings_count:
+    description: "Total number of findings detected"
+    value: ${{ steps.gitghost.outputs.findings_count }}
+  risk_score:
+    description: "Calculated risk score (0-100)"
+    value: ${{ steps.gitghost.outputs.risk_score }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Set up Python"
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: "Install GitGhost"
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install gitghost
+
+    - name: "Execute GitGhost CI"
+      id: gitghost
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        gitghost ci --fail-on ${{ inputs.fail_on }}
