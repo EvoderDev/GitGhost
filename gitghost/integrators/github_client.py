@@ -111,6 +111,18 @@ class GitHubClient:
         except Exception:
             pass
 
+    def write_step_outputs(self, report: ScanReport) -> None:
+        """Writes findings_count and risk_score outputs to $GITHUB_OUTPUT for action.yml."""
+        output_file = os.environ.get("GITHUB_OUTPUT")
+        if not output_file:
+            return
+        try:
+            with open(output_file, "a", encoding="utf-8") as f:
+                f.write(f"findings_count={len(report.findings)}\n")
+                f.write(f"risk_score={report.risk_score}\n")
+        except Exception:
+            pass
+
     def format_markdown_summary(self, report: ScanReport) -> str:
         """Formats the scan report into GitHub Actions Markdown."""
         status_badge = "🟢 **PASS**" if report.passed else "🔴 **BLOCK**"

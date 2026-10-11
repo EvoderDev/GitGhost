@@ -85,24 +85,46 @@ Beyond detection, GitGhost acts as an autonomous engineer: it synthesizes root c
 
 ---
 
-## 📦 Installation
+## 📦 Installation & Quick Start
 
-### From Source (Recommended for Development)
+### ⚡ 1-Click Automated Setup (Recommended)
+
+Run the single-click setup script for your operating system to automatically check Python version, provision a dedicated `.venv` virtual environment, and install all dependencies:
+
+**Windows (PowerShell / Command Prompt):**
+```cmd
+setup.bat
+```
+
+**Linux / macOS:**
+```bash
+chmod +x setup.sh && ./setup.sh
+```
+
+---
+
+### Manual Installation (From Source)
 
 ```bash
+# Clone the repository
 git clone https://github.com/EvoderDev/GitGhost.git
 cd GitGhost
 
-# Install in editable mode with development dependencies
-pip install -e .[dev]
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies and package in editable mode
+pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Verify Installation
 
 ```bash
-gitghost --help
+gitghost --version
 # Or use the alias
-gh-ghost --help
+gh-ghost --version
 ```
 
 ---

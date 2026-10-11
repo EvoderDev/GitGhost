@@ -128,6 +128,12 @@ class SecretDetector:
         "123456", "12345678", "<key>", "<your_key>", "none", "null", "undefined"
     }
 
+    def __init__(self, config: Optional[dict] = None):
+        self.config = config or {}
+        self.enabled = self.config.get("enabled", True)
+        self.min_entropy_threshold = float(self.config.get("min_entropy", 4.3))
+        self.ignored_patterns = [re.compile(p) for p in self.config.get("ignored_patterns", [])]
+
     @staticmethod
     def calculate_shannon_entropy(data: str) -> float:
         """Calculates the Shannon entropy of a string."""
@@ -171,6 +177,11 @@ class SecretDetector:
         if len(set(lower_match)) <= 3 and len(lower_match) > 8:
             return True
 
+        if hasattr(self, "ignored_patterns") and self.ignored_patterns:
+            for pat in self.ignored_patterns:
+                if pat.search(matched_text):
+                    return True
+
         return False
 
     def scan_line(
@@ -180,6 +191,9 @@ class SecretDetector:
         line_content: str,
     ) -> List[Finding]:
         """Scans a single line of code or diff addition for secret leaks."""
+        if hasattr(self, "enabled") and not self.enabled:
+            return []
+
         findings: List[Finding] = []
 
         for p in self.PATTERNS:

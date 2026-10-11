@@ -83,6 +83,27 @@ class PatchGenerator:
                 indent = " " * (len(line) - len(line.lstrip()))
                 return f"{indent}import asyncio\n{indent}await asyncio.sleep({line.split('time.sleep(')[1].split(')')[0]})"
 
+        # 10. Path Traversal: validate path with os.path.basename / abspath
+        if finding.rule_id == "GHOST-PATH-001":
+            match = re.search(r"open\((.*?)\)", line)
+            if match:
+                path_arg = match.group(1).split(",")[0].strip()
+                indent = " " * (len(line) - len(line.lstrip()))
+                rest = line[match.end():]
+                fixed_call = f"open(os.path.abspath({path_arg})"
+                if "," in match.group(1):
+                    fixed_call += "," + ",".join(match.group(1).split(",")[1:])
+                fixed_call += ")"
+                return f"{indent}import os\n{line[:match.start()]}{fixed_call}{rest}"
+
+        # 11. Unclosed Resources: convert f = open(...) to with open(...) as f:
+        if finding.rule_id == "GHOST-RES-001":
+            match = re.search(r"([A-Za-z0-9_]+)\s*=\s*open\((.*?)\)", line)
+            if match:
+                var_name, open_args = match.groups()
+                indent = " " * (len(line) - len(line.lstrip()))
+                return f"{indent}with open({open_args}) as {var_name}:"
+
         return None
 
     def generate_patch_for_file(

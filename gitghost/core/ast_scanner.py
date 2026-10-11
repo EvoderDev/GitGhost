@@ -16,19 +16,63 @@ from gitghost.models import Category, Finding, Severity
 class PythonASTVisitor(ast.NodeVisitor):
     """Inspects Python AST for OWASP vulnerabilities and performance flaws."""
 
-    def __init__(self, file_path: str, code_lines: List[str]):
+    def __init__(self, file_path: str, code_lines: List[str], rules_config: Optional[dict] = None):
         super().__init__()
         self.file_path = file_path
         self.code_lines = code_lines
+        self.rules_config = rules_config or {}
         self.findings: List[Finding] = []
         self.in_loop: bool = False
+        self.in_with: bool = False
         self.current_function: Optional[ast.FunctionDef | ast.AsyncFunctionDef] = None
+
+    def _is_rule_enabled(self, rule_name: str) -> bool:
+        return self.rules_config.get(rule_name, True)
 
     def _get_snippet(self, node: ast.AST) -> str:
         lineno = getattr(node, "lineno", 1)
         if 1 <= lineno <= len(self.code_lines):
             return self.code_lines[lineno - 1].strip()
         return ""
+
+    def visit_With(self, node: ast.With) -> None:
+        prev_with = self.in_with
+        self.in_with = True
+        self.generic_visit(node)
+        self.in_with = prev_with
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # Check unclosed resource: f = open(...) without with statement
+        if not self.in_with and self._is_rule_enabled("unclosed_resources"):
+            if isinstance(node.value, ast.Call):
+                func = node.value.func
+                is_open = False
+                if isinstance(func, ast.Name) and func.id == "open":
+                    is_open = True
+                elif isinstance(func, ast.Attribute) and func.attr == "open":
+                    is_open = True
+                if is_open:
+                    self.findings.append(
+                        Finding(
+                            file_path=self.file_path,
+                            line_number=node.lineno,
+                            column=node.col_offset + 1,
+                            severity=Severity.LOW,
+                            category=Category.CODE_SMELL,
+                            rule_id="GHOST-RES-001",
+                            title="Unclosed File Resource Leak",
+                            description=(
+                                "File handle opened via 'open()' assignment without a 'with' context manager. "
+                                "This risks leaking file descriptors if exceptions occur before explicit close()."
+                            ),
+                            snippet=self._get_snippet(node),
+                            remediation="Use a 'with open(...) as handle:' context manager block.",
+                            suggested_fix="with open(...) as f:\n    data = f.read()",
+                            cwe="CWE-775",
+                            owasp_tag="A04:2021-Insecure Design",
+                        )
+                    )
+        self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> None:
         prev_loop = self.in_loop
@@ -312,6 +356,39 @@ class PythonASTVisitor(ast.NodeVisitor):
                 )
             )
 
+        # 9. Path Traversal: open() with dynamically concatenated or formatted paths
+        if func_name == "open" and self._is_rule_enabled("path_traversal"):
+            if node.args:
+                first_arg = node.args[0]
+                is_traversal_prone = False
+                if isinstance(first_arg, (ast.JoinedStr, ast.BinOp)):
+                    is_traversal_prone = True
+                elif isinstance(first_arg, ast.Call) and isinstance(first_arg.func, ast.Attribute) and first_arg.func.attr == "join":
+                    if any(isinstance(a, (ast.Name, ast.Call, ast.JoinedStr, ast.BinOp)) for a in first_arg.args):
+                        is_traversal_prone = True
+
+                if is_traversal_prone:
+                    self.findings.append(
+                        Finding(
+                            file_path=self.file_path,
+                            line_number=node.lineno,
+                            column=node.col_offset + 1,
+                            severity=Severity.HIGH,
+                            category=Category.OWASP_PATH_TRAVERSAL,
+                            rule_id="GHOST-PATH-001",
+                            title="Path Traversal Risk via Dynamic File Open",
+                            description=(
+                                "File path in 'open()' is dynamically concatenated without path containment verification. "
+                                "Attackers using '../' sequences can escape root boundaries and access sensitive files."
+                            ),
+                            snippet=self._get_snippet(node),
+                            remediation="Validate paths using os.path.abspath() or sanitize with os.path.basename().",
+                            suggested_fix="import os\nsafe_path = os.path.abspath(user_path)\nwith open(safe_path) as f:",
+                            cwe="CWE-22",
+                            owasp_tag="A01:2021-Broken Access Control",
+                        )
+                    )
+
         self.generic_visit(node)
 
 
@@ -404,18 +481,25 @@ class MultiLanguagePatternScanner:
 class ASTScanner:
     """Coordinator for Abstract Syntax Tree and semantic code scanning."""
 
-    def __init__(self):
+    def __init__(self, config: Optional[dict] = None):
+        self.config = config or {}
+        self.enabled = self.config.get("enabled", True)
+        self.languages = [l.lower() for l in self.config.get("languages", ["python", "javascript", "typescript", "go", "sh"])]
+        self.rules_config = self.config.get("rules", {})
         self.ml_scanner = MultiLanguagePatternScanner()
 
     def scan_source(self, file_path: str, code_content: str) -> List[Finding]:
         """Scans source code using Python AST if python file, or multi-language rules."""
+        if not self.enabled:
+            return []
+
         findings: List[Finding] = []
         ext = os.path.splitext(file_path)[1].lower()
 
-        if ext == ".py":
+        if ext == ".py" and ("python" in self.languages or not self.languages):
             try:
                 tree = ast.parse(code_content, filename=file_path)
-                visitor = PythonASTVisitor(file_path, code_content.splitlines())
+                visitor = PythonASTVisitor(file_path, code_content.splitlines(), rules_config=self.rules_config)
                 visitor.visit(tree)
                 findings.extend(visitor.findings)
             except SyntaxError:
@@ -428,6 +512,9 @@ class ASTScanner:
 
     def scan_diff_file(self, diff_file, base_dir: str = ".") -> List[Finding]:
         """Scans a diff file, filtering findings to lines that were modified or added."""
+        if not self.enabled:
+            return []
+
         findings: List[Finding] = []
         target_path = diff_file.target_path
         added_lines = set(diff_file.get_added_line_numbers())

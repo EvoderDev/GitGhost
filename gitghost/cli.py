@@ -73,8 +73,8 @@ def run_scan_pipeline(
     cfg = load_config()
     exclude_patterns = cfg.get("exclude_patterns", [])
 
-    secret_detector = SecretDetector()
-    ast_scanner = ASTScanner()
+    secret_detector = SecretDetector(config=cfg.get("secrets"))
+    ast_scanner = ASTScanner(config=cfg.get("ast"))
 
     # Mode 1: File or Directory direct scan
     if file_path:
@@ -321,8 +321,9 @@ def ci_cmd(fail_on):
     patcher = PatchGenerator()
     report.patches = patcher.generate_all_patches(report.findings)
 
-    # Write step summary for GitHub Action UI
+    # Write step summary and outputs for GitHub Action UI / workflow
     gh.write_step_summary(report)
+    gh.write_step_outputs(report)
 
     # Post PR review if configured
     if pr_number and gh.is_configured and report.findings:
